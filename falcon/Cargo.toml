@@ -1,0 +1,42 @@
+[package]
+name = "falcon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Rust bindings for the Falcon post-quantum signature scheme with WASM support"
+
+[dependencies]
+falcon-sys = { path = "../falcon-sys" }
+rand_core = "0.6"
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dependencies.rand]
+version = "0.8"
+optional = true
+
+[dependencies.getrandom]
+version = "0.2"
+optional = true
+
+[dependencies.wasm-bindgen]
+version = "0.2"
+optional = true
+
+[dev-dependencies]
+rand = "0.8"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[features]
+default = ["std"]
+std = ["rand", "getrandom"]
+wasm = ["std", "wasm-bindgen", "getrandom/js"]
+# Use this feature for embedding in Soroban contracts (no cdylib, no allocator)
+soroban = []
+
+[lib]
+# rlib for library usage, cdylib for WASM builds
+crate-type = ["cdylib", "rlib"]

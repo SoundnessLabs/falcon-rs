@@ -1,0 +1,16 @@
+[package]
+name = "falcon-sys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Raw FFI bindings to the Falcon post-quantum signature library"
+links = "falcon"
+
+[build-dependencies]
+cc = "1.0"
+
+[features]
+default = []
+avx2 = []
+fma = ["avx2"]
+system-rng = []
