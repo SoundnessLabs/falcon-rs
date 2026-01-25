@@ -1,32 +1,33 @@
 #![no_std]
 
-//! Falcon-512 Smart Account Verifier for Soroban.
+//! Falcon-512 Smart Account for Soroban.
 //!
-//! Implements a signature verifier compatible with OpenZeppelin's Soroban Smart Accounts.
-//! Delegates to an external Falcon verifier contract.
+//! Implements `CustomAccountInterface` for post-quantum signature authentication.
 
-use soroban_sdk::{contract, contracterror, contractimpl, symbol_short, Address, Bytes, Env, Symbol};
+use soroban_sdk::{
+    auth::{Context, CustomAccountInterface},
+    contract, contracterror, contractimpl,
+    crypto::Hash,
+    symbol_short, Address, Bytes, Env, Symbol, Vec,
+};
 
-const FALCON_VERIFIER_KEY: Symbol = symbol_short!("FV_ADDR");
+const FALCON_PUBKEY_KEY: Symbol = symbol_short!("F_PUBKEY");
+const FALCON_VERIFIER_KEY: Symbol = symbol_short!("F_VERIFY");
 
-pub const FALCON_512_PUBKEY_SIZE: u32 = 897;
+pub const FALCON_512_PUBKEY_SIZE: usize = 897;
 pub const FALCON_SIG_MIN_SIZE: u32 = 42;
 pub const FALCON_SIG_MAX_SIZE: u32 = 700;
-pub const FALCON_512_SIG_PADDED_SIZE: u32 = 666;
 
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    InvalidPublicKeySize = 2,
-    InvalidSignatureSize = 3,
-    InvalidHashSize = 4,
-    AlreadyInitialized = 5,
+    AlreadyInitialized = 2,
+    InvalidPublicKeySize = 3,
+    InvalidSignatureSize = 4,
+    VerificationFailed = 5,
 }
-
-#[contract]
-pub struct FalconSmartAccountVerifier;
 
 mod falcon_verifier {
     use soroban_sdk::{contractclient, Bytes, Env};
@@ -37,53 +38,96 @@ mod falcon_verifier {
     }
 }
 
+#[contract]
+pub struct FalconSmartAccount;
+
 #[contractimpl]
-impl FalconSmartAccountVerifier {
-    pub fn initialize(env: Env, falcon_verifier: Address) -> Result<(), Error> {
-        if env.storage().instance().has(&FALCON_VERIFIER_KEY) {
+impl FalconSmartAccount {
+    /// Initialize the smart account with a Falcon public key and verifier contract.
+    pub fn initialize(
+        env: Env,
+        falcon_pubkey: Bytes,
+        falcon_verifier: Address,
+    ) -> Result<(), Error> {
+        if env.storage().instance().has(&FALCON_PUBKEY_KEY) {
             return Err(Error::AlreadyInitialized);
         }
-        env.storage().instance().set(&FALCON_VERIFIER_KEY, &falcon_verifier);
+        if falcon_pubkey.len() != FALCON_512_PUBKEY_SIZE as u32 {
+            return Err(Error::InvalidPublicKeySize);
+        }
+
+        env.storage()
+            .instance()
+            .set(&FALCON_PUBKEY_KEY, &falcon_pubkey);
+        env.storage()
+            .instance()
+            .set(&FALCON_VERIFIER_KEY, &falcon_verifier);
         Ok(())
     }
 
-    pub fn get_falcon_verifier(env: Env) -> Result<Address, Error> {
+    /// Get the stored Falcon public key.
+    pub fn get_pubkey(env: Env) -> Result<Bytes, Error> {
+        env.storage()
+            .instance()
+            .get(&FALCON_PUBKEY_KEY)
+            .ok_or(Error::NotInitialized)
+    }
+
+    /// Get the Falcon verifier contract address.
+    pub fn get_verifier(env: Env) -> Result<Address, Error> {
         env.storage()
             .instance()
             .get(&FALCON_VERIFIER_KEY)
             .ok_or(Error::NotInitialized)
     }
+}
 
-    /// Verify a Falcon-512 signature (Smart Account interface).
-    pub fn verify(env: Env, payload: Bytes, key_data: Bytes, sig_data: Bytes) -> bool {
-        if key_data.len() != FALCON_512_PUBKEY_SIZE {
-            return false;
+#[contractimpl]
+impl CustomAccountInterface for FalconSmartAccount {
+    /// Use Bytes directly for the signature - simpler SCVal encoding.
+    type Signature = Bytes;
+    type Error = Error;
+
+    /// Verify authorization using Falcon-512 signature.
+    #[allow(non_snake_case)]
+    fn __check_auth(
+        env: Env,
+        signature_payload: Hash<32>,
+        signature: Bytes,
+        _auth_contexts: Vec<Context>,
+    ) -> Result<(), Error> {
+        // Get stored public key
+        let pubkey: Bytes = env
+            .storage()
+            .instance()
+            .get(&FALCON_PUBKEY_KEY)
+            .ok_or(Error::NotInitialized)?;
+
+        // Get verifier contract address
+        let verifier_addr: Address = env
+            .storage()
+            .instance()
+            .get(&FALCON_VERIFIER_KEY)
+            .ok_or(Error::NotInitialized)?;
+
+        // Validate signature size
+        let sig_len = signature.len();
+        if sig_len < FALCON_SIG_MIN_SIZE || sig_len > FALCON_SIG_MAX_SIZE {
+            return Err(Error::InvalidSignatureSize);
         }
-        if sig_data.len() < FALCON_SIG_MIN_SIZE || sig_data.len() > FALCON_SIG_MAX_SIZE {
-            return false;
+
+        // Convert the 32-byte hash to Bytes for the verifier
+        let payload_bytes = Bytes::from_slice(&env, signature_payload.to_array().as_slice());
+
+        // Call the external Falcon verifier contract
+        let client = falcon_verifier::FalconVerifierClient::new(&env, &verifier_addr);
+        let is_valid = client.verify(&pubkey, &payload_bytes, &signature);
+
+        if is_valid {
+            Ok(())
+        } else {
+            Err(Error::VerificationFailed)
         }
-
-        let falcon_verifier_addr: Address = match env.storage().instance().get(&FALCON_VERIFIER_KEY)
-        {
-            Some(addr) => addr,
-            None => return false,
-        };
-
-        let client = falcon_verifier::FalconVerifierClient::new(&env, &falcon_verifier_addr);
-        client.verify(&key_data, &payload, &sig_data)
-    }
-
-    pub fn validate_inputs(env: Env, hash: Bytes, key_data: Bytes, sig_data: Bytes) -> bool {
-        let _ = env;
-        hash.len() == 32
-            && key_data.len() == FALCON_512_PUBKEY_SIZE
-            && sig_data.len() >= FALCON_SIG_MIN_SIZE
-            && sig_data.len() <= FALCON_SIG_MAX_SIZE
-    }
-
-    pub fn get_expected_sizes(env: Env) -> (u32, u32, u32, u32, u32) {
-        let _ = env;
-        (32, FALCON_512_PUBKEY_SIZE, FALCON_SIG_MIN_SIZE, FALCON_SIG_MAX_SIZE, FALCON_512_SIG_PADDED_SIZE)
     }
 }
 
@@ -94,45 +138,44 @@ mod test {
     use soroban_sdk::Env;
 
     #[test]
-    fn test_contract_initialization() {
+    fn test_initialization() {
         let env = Env::default();
-        let contract_id = env.register(FalconSmartAccountVerifier, ());
-        let client = FalconSmartAccountVerifierClient::new(&env, &contract_id);
+        let contract_id = env.register(FalconSmartAccount, ());
+        let client = FalconSmartAccountClient::new(&env, &contract_id);
 
-        let falcon_verifier_addr = Address::generate(&env);
-        client.initialize(&falcon_verifier_addr);
-
-        let stored_addr = client.get_falcon_verifier();
-        assert_eq!(stored_addr, falcon_verifier_addr);
-    }
-
-    #[test]
-    fn test_validate_inputs() {
-        let env = Env::default();
-        let contract_id = env.register(FalconSmartAccountVerifier, ());
-        let client = FalconSmartAccountVerifierClient::new(&env, &contract_id);
-
-        let hash = Bytes::from_array(&env, &[0u8; 32]);
         let pubkey = Bytes::from_array(&env, &[0u8; 897]);
-        let sig = Bytes::from_array(&env, &[0u8; 666]);
+        let verifier_addr = Address::generate(&env);
 
-        assert!(client.validate_inputs(&hash, &pubkey, &sig));
-        assert!(!client.validate_inputs(&Bytes::from_array(&env, &[0u8; 16]), &pubkey, &sig));
-        assert!(!client.validate_inputs(&hash, &Bytes::from_array(&env, &[0u8; 100]), &sig));
-        assert!(!client.validate_inputs(&hash, &pubkey, &Bytes::from_array(&env, &[0u8; 10])));
+        client.initialize(&pubkey, &verifier_addr);
+
+        assert_eq!(client.get_pubkey(), pubkey);
+        assert_eq!(client.get_verifier(), verifier_addr);
     }
 
     #[test]
-    fn test_get_expected_sizes() {
+    fn test_invalid_pubkey_size() {
         let env = Env::default();
-        let contract_id = env.register(FalconSmartAccountVerifier, ());
-        let client = FalconSmartAccountVerifierClient::new(&env, &contract_id);
+        let contract_id = env.register(FalconSmartAccount, ());
+        let client = FalconSmartAccountClient::new(&env, &contract_id);
 
-        let (hash_size, pubkey_size, sig_min, sig_max, sig_padded) = client.get_expected_sizes();
-        assert_eq!(hash_size, 32);
-        assert_eq!(pubkey_size, 897);
-        assert_eq!(sig_min, 42);
-        assert_eq!(sig_max, 700);
-        assert_eq!(sig_padded, 666);
+        let bad_pubkey = Bytes::from_array(&env, &[0u8; 100]);
+        let verifier_addr = Address::generate(&env);
+
+        let result = client.try_initialize(&bad_pubkey, &verifier_addr);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #2)")]
+    fn test_double_init() {
+        let env = Env::default();
+        let contract_id = env.register(FalconSmartAccount, ());
+        let client = FalconSmartAccountClient::new(&env, &contract_id);
+
+        let pubkey = Bytes::from_array(&env, &[0u8; 897]);
+        let verifier_addr = Address::generate(&env);
+
+        client.initialize(&pubkey, &verifier_addr);
+        client.initialize(&pubkey, &verifier_addr); // Should panic
     }
 }
