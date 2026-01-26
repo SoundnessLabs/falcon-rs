@@ -63,49 +63,6 @@ impl FalconVerifierContract {
             &sig_bytes[..sig_len],
         )
     }
-
-    /// Verify a Falcon-512 signature with pre-hashed message.
-    /// Use this when the message has already been hashed using SHAKE256.
-    ///
-    /// # Arguments
-    /// * `public_key` - 897-byte Falcon-512 public key
-    /// * `nonce` - 40-byte nonce from signature
-    /// * `hashed_message` - The hash output used in signature (SHAKE256(nonce || message))
-    /// * `s2` - Decompressed signature polynomial (512 i16 values as bytes)
-    pub fn verify_raw(_env: Env, public_key: Bytes, c0: Bytes, s2: Bytes) -> bool {
-        if public_key.len() != FALCON_512_PUBKEY_SIZE as u32 {
-            return false;
-        }
-        if c0.len() != 1024 || s2.len() != 1024 {
-            return false;
-        }
-
-        let mut pk_bytes = [0u8; FALCON_512_PUBKEY_SIZE];
-        for i in 0..FALCON_512_PUBKEY_SIZE {
-            pk_bytes[i] = public_key.get(i as u32).unwrap();
-        }
-
-        let mut c0_poly = [0u16; FALCON_512_N];
-        for i in 0..FALCON_512_N {
-            let lo = c0.get((i * 2) as u32).unwrap() as u16;
-            let hi = c0.get((i * 2 + 1) as u32).unwrap() as u16;
-            c0_poly[i] = lo | (hi << 8);
-        }
-
-        let mut s2_poly = [0i16; FALCON_512_N];
-        for i in 0..FALCON_512_N {
-            let lo = s2.get((i * 2) as u32).unwrap() as u16;
-            let hi = s2.get((i * 2 + 1) as u32).unwrap() as u16;
-            s2_poly[i] = (lo | (hi << 8)) as i16;
-        }
-
-        let mut h = [0u16; FALCON_512_N];
-        if !FalconVerifier::decode_pubkey(&pk_bytes, &mut h) {
-            return false;
-        }
-
-        FalconVerifier::verify_raw_512(&c0_poly, &s2_poly, &h)
-    }
 }
 
 #[cfg(test)]

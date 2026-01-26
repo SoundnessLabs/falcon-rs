@@ -123,19 +123,6 @@ impl FalconVerifier {
         Self::verify_raw_512(&c0, &s2, &h)
     }
 
-    /// Computes s1 = c - s2·h mod q and verifies ||(s1, s2)||² ≤ L2_BOUND.
-    ///```text
-    /// s1 + s2·h ≡ c (mod q) in Z_q[X]/(X^n + 1)
-    /// ```
-    /// where c is the challenge (hash of nonce || message) and h is the public key.
-    ///
-    /// # Arguments
-    /// * `c0` - Challenge polynomial (hash-to-point output), values in [0, q-1]
-    /// * `s2` - Signature polynomial, values in [-q/2, q/2]
-    /// * `h` - Public key, must already be in NTT domain and Montgomery form
-    ///
-    /// # Returns
-    /// `true` if the L2 norm bound is satisfied, `false` otherwise.
     pub fn verify_raw_512(
         c0: &[u16; FALCON_512_N],
         s2: &[i16; FALCON_512_N],

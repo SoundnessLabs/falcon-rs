@@ -148,7 +148,7 @@ SIGNATURE="399e11dbc7c5328dbdd260d989a2e58c18e698b7ee2c94235312fabbae38c24058d1d
 
 stellar contract invoke \
     --id $CONTRACT_ID \
-    --source alice \
+    --source demo \
     --network testnet \
     -- \
     verify \
@@ -173,25 +173,6 @@ Verifies a Falcon-512 signature.
 
 Returns `true` if valid, `false` otherwise.
 
-### `verify_raw(public_key, c0, s2) -> bool`
-
-Low-level verification with pre-decoded polynomials. Useful when integrating with custom signature schemes.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `public_key` | `Bytes` | 897-byte Falcon-512 public key |
-| `c0` | `Bytes` | 1024 bytes: 512 u16 challenge polynomial (little-endian) |
-| `s2` | `Bytes` | 1024 bytes: 512 i16 signature polynomial (little-endian) |
-
-## Gas Costs
-
-| Operation | CPU Instructions | Memory |
-|-----------|-----------------|--------|
-| Verify (14-byte message) | ~397,000 | 1,225 bytes |
-| Verify (100-byte message) | ~418,000 | 1,225 bytes |
-
-This is approximately **0.4% of Soroban's 100M instruction budget**.
-
 ## Integration Example (Rust SDK)
 
 ```rust
@@ -213,31 +194,9 @@ pub fn verify_signature(env: &Env, pubkey: &[u8], message: &[u8], sig: &[u8]) ->
 }
 ```
 
-## Running Tests
-
-```bash
-# Run all tests including cross-verification with C reference implementation
-cargo test --features testutils
-
-# Run gas benchmarks
-cargo test --features testutils benchmark -- --nocapture
-```
-
-## Why Pure Rust?
-
-The `falcon` crate in this repo provides C FFI bindings to the reference implementation, which works fine for native and browser WASM. But Soroban's WASM environment is more restrictive:
-
-- No `getrandom` or entropy sources
-- No global memory allocator (`alloc` crate unavailable)
-- No libc or WASI
-- Pure `#![no_std]` with only stack allocation
-
-This verifier is pure Rust, written from scratch to work within these constraints.
-
 ## Security
 
 **This code has not been audited.** Use at your own risk in production environments.
-
 
 ## License
 
