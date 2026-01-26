@@ -2,16 +2,16 @@
 
 A signature verifier contract compatible with [OpenZeppelin's Soroban Smart Accounts](https://github.com/OpenZeppelin/stellar-contracts/tree/main/packages/accounts). Lets you use **Falcon-512 post-quantum signatures** with Stellar account abstraction.
 
-## Overview
-
-A thin wrapper around the [Falcon-512 verifier](../soroban-falcon-verifier) that implements the verifier interface OpenZeppelin's Smart Accounts expect. With this, you can create smart accounts secured by post-quantum signatures.
-
 ## Deployed Contracts (Testnet)
 
 | Contract | Address |
 |----------|---------|
-| **Falcon-512 Verifier** | `CCVZDNGKWJPRLOXS4CBOJ2HTYNIW4C3244GG2CAA5V7UIYOMTF355QR7` |
+| **Falcon-512 Verifier** | `CBUSI6FKYYA2OUXR5Z4APPHARJ3NOS3YPUDJU2YZC2YXH46BQZIIUPZR` |
 | **Falcon Smart Account** | `CCZYRK7TZK6POBS5NMUPYBC7HA6EI4WJLWXNZCRF656L3HFF3BX43QBG` |
+
+## Live Demo
+
+A live demo is available at: [stellar-pq.soundness.xyz](https://stellar-pq.soundness.xyz/)
 
 ## Contract Interface
 
@@ -66,26 +66,11 @@ When creating an OpenZeppelin Smart Account, configure an external signer using 
 use soroban_sdk::{Address, Bytes};
 
 // Create an external signer with Falcon
-let falcon_sa_verifier = Address::from_string(&"CCVZDNGKWJPRLOXS4CBOJ2HTYNIW4C3244GG2CAA5V7UIYOMTF355QR7");
+let falcon_sa_verifier = Address::from_string(&"CBUSI6FKYYA2OUXR5Z4APPHARJ3NOS3YPUDJU2YZC2YXH46BQZIIUPZR");
 let falcon_pubkey: Bytes = /* 897-byte Falcon-512 public key */;
 
 // Add to Smart Account context rule
 Signer::External(falcon_sa_verifier, falcon_pubkey)
-```
-
-### Sign and Verify
-
-```rust
-// Off-chain: Sign the authorization hash with Falcon
-// The `falcon` crate handles key generation and signing
-use falcon::{Falcon512, KeyPair, SignatureFormat};
-
-let keypair = KeyPair::<Falcon512>::generate()?;
-let auth_hash: [u8; 32] = /* SHA-256 of authorization payload */;
-let signature = keypair.sign(&auth_hash, SignatureFormat::Padded)?;
-
-// On-chain: Smart Account **calls** this verifier
-// verify(auth_hash, pubkey, signature) -> true/false
 ```
 
 ### Example of On-chain Verification with Rust SDK
