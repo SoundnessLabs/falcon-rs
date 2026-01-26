@@ -310,11 +310,22 @@ export async function fundSmartAccount(
   amountXLM: number = 10
 ): Promise<FundResult> {
   try {
-    const server = new StellarSdk.SorobanRpc.Server(RPC_URL)
     const sourceKeypair = StellarSdk.Keypair.fromSecret(DEMO_SECRET)
     const sourcePublicKey = sourceKeypair.publicKey()
 
-    const account = await server.getAccount(sourcePublicKey)
+    // Use Horizon API to get account sequence (more stable than Soroban RPC for this)
+    const horizonUrl = 'https://horizon-testnet.stellar.org'
+    const accountResponse = await fetch(`${horizonUrl}/accounts/${sourcePublicKey}`)
+    const accountData = await accountResponse.json()
+
+    if (!accountResponse.ok || !accountData.sequence) {
+      return {
+        success: false,
+        error: 'Account not found',
+      }
+    }
+
+    const account = new StellarSdk.Account(sourcePublicKey, accountData.sequence)
     const xlmContract = new StellarSdk.Contract(XLM_SAC_ID)
 
     const amountStroops = BigInt(amountXLM * 10_000_000)
@@ -333,51 +344,150 @@ export async function fundSmartAccount(
       .setTimeout(300)
       .build()
 
-    const simulation = await server.simulateTransaction(transaction)
+    // Use raw fetch for simulation to avoid XDR parsing issues
+    const simResponse = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'simulateTransaction',
+        params: { transaction: transaction.toXDR() },
+      }),
+    })
+    const simResult = await simResponse.json()
 
-    if (StellarSdk.SorobanRpc.Api.isSimulationError(simulation)) {
+    if (simResult.error || simResult.result?.error) {
       return {
         success: false,
-        error: `Simulation failed: ${simulation.error}`,
+        error: `Simulation failed: ${simResult.error?.message || simResult.result?.error}`,
       }
     }
 
-    const preparedTx = StellarSdk.SorobanRpc.assembleTransaction(
-      transaction,
-      simulation
-    ).build()
+    // Build soroban data from simulation result
+    const sorobanData = StellarSdk.xdr.SorobanTransactionData.fromXDR(
+      simResult.result.transactionData,
+      'base64'
+    )
+    const minResourceFee = parseInt(simResult.result.minResourceFee || '0')
+
+    // Parse auth entries from simulation
+    const authEntries: StellarSdk.xdr.SorobanAuthorizationEntry[] = []
+    if (simResult.result.results?.[0]?.auth) {
+      for (const authXdr of simResult.result.results[0].auth) {
+        authEntries.push(StellarSdk.xdr.SorobanAuthorizationEntry.fromXDR(authXdr, 'base64'))
+      }
+    }
+
+    // Rebuild operation with auth entries
+    const opWithAuth = StellarSdk.Operation.invokeHostFunction({
+      func: (transaction.operations[0] as any).func,
+      auth: authEntries,
+    })
+
+    // Create fresh account with original sequence (account object was mutated by first build)
+    const freshAccount = new StellarSdk.Account(sourcePublicKey, accountData.sequence)
+
+    // Build new transaction with auth
+    const preparedTx = new StellarSdk.TransactionBuilder(freshAccount, {
+      fee: (parseInt(transaction.fee) + minResourceFee).toString(),
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(opWithAuth)
+      .setTimeout(300)
+      .setSorobanData(sorobanData)
+      .build()
 
     preparedTx.sign(sourceKeypair)
 
-    const sendResult = await server.sendTransaction(preparedTx)
+    // Use raw fetch for sending to avoid XDR parsing issues
+    const sendResponse = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'sendTransaction',
+        params: { transaction: preparedTx.toXDR() },
+      }),
+    })
+    const sendResult = await sendResponse.json()
 
-    if (sendResult.status === 'ERROR') {
+    console.log('Send result:', sendResult)
+    if (sendResult.result?.status === 'ERROR' || sendResult.error) {
+      const errorDetail = sendResult.result?.errorResultXdr
+        ? (() => {
+            try {
+              const err = StellarSdk.xdr.TransactionResult.fromXDR(sendResult.result.errorResultXdr, 'base64')
+              return err.result().switch().name
+            } catch { return 'unknown' }
+          })()
+        : sendResult.error?.message || 'unknown'
+      console.log('Send error detail:', errorDetail, sendResult)
       return {
         success: false,
-        error: 'Transaction rejected',
+        error: `Transaction rejected: ${errorDetail}`,
       }
     }
 
-    let txResult = await server.getTransaction(sendResult.hash)
-    let attempts = 0
-    while (txResult.status === StellarSdk.SorobanRpc.Api.GetTransactionStatus.NOT_FOUND && attempts < 30) {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      txResult = await server.getTransaction(sendResult.hash)
-      attempts++
+    const txHash = sendResult.result?.hash
+    if (!txHash) {
+      return {
+        success: false,
+        error: 'No transaction hash returned',
+      }
     }
 
-    if (txResult.status === StellarSdk.SorobanRpc.Api.GetTransactionStatus.SUCCESS) {
+    let txStatus = 'NOT_FOUND'
+    let txResultData: any = null
+    let attempts = 0
+    while (txStatus === 'NOT_FOUND' && attempts < 30) {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      attempts++
+
+      try {
+        const statusResponse = await fetch(RPC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getTransaction',
+            params: { hash: txHash },
+          }),
+        })
+        const statusResult = await statusResponse.json()
+        txStatus = statusResult.result?.status || 'NOT_FOUND'
+        txResultData = statusResult.result
+      } catch (e) {
+        console.log('Error checking transaction status:', e)
+      }
+    }
+
+    if (txStatus === 'SUCCESS') {
       return {
         success: true,
         amount: `${amountXLM} XLM`,
-        transactionHash: sendResult.hash,
-        explorerUrl: getExplorerUrl(sendResult.hash),
+        transactionHash: txHash,
+        explorerUrl: getExplorerUrl(txHash),
       }
     } else {
+      // Log detailed error info
+      console.log('Transaction failed details:', txResultData)
+      let errorDetail = txStatus
+      if (txResultData?.resultXdr) {
+        try {
+          const resultXdr = StellarSdk.xdr.TransactionResult.fromXDR(txResultData.resultXdr, 'base64')
+          errorDetail = resultXdr.result().switch().name
+        } catch (e) {
+          console.log('Could not parse result XDR:', e)
+        }
+      }
       return {
         success: false,
-        error: `Transaction failed: ${txResult.status}`,
-        transactionHash: sendResult.hash,
+        error: `Transaction failed: ${errorDetail}`,
+        transactionHash: txHash,
+        explorerUrl: getExplorerUrl(txHash),
       }
     }
   } catch (error) {
