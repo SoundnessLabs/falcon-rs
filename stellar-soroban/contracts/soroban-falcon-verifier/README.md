@@ -4,32 +4,25 @@
 
 A pure-Rust implementation of Falcon-512 post-quantum signature verification for [Soroban](https://soroban.stellar.org/) smart contracts.
 
-## Overview
-
-This contract allows you to verify [Falcon-512](https://falcon-sign.info/) signatures on-chain. Falcon is a NIST Post-Quantum Cryptography standard finalist, providing security against quantum computer attacks.
-
-**Key Features:**
-- Pure Rust implementation (no C FFI) - required for Soroban's `no_std` WASM environment
-- ~400k CPU instructions per verification (~0.4% of Soroban's 100M budget)
-- Cross-verified against the C reference implementation
-- Supports compressed and padded signature formats
-
 ## Quick Start
 
 ### Prerequisites
 
 1. **Rust** (1.70+)
+
    ```bash
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    rustup target add wasm32-unknown-unknown
    ```
 
 2. **Stellar CLI**
+
    ```bash
    cargo install stellar-cli --locked
    ```
 
 3. **Testnet Account**
+
    ```bash
    stellar keys generate --global alice --network testnet
    stellar keys address alice
@@ -46,6 +39,7 @@ cd falcon-signer
 ```
 
 Add to `Cargo.toml`:
+
 ```toml
 [dependencies]
 falcon = { path = "../falcon" }  # or from crates.io when published
@@ -53,6 +47,7 @@ hex = "0.4"
 ```
 
 Create `src/main.rs`:
+
 ```rust
 use falcon::{Falcon512, KeyPair, SignatureFormat};
 
@@ -81,6 +76,7 @@ fn main() {
 ```
 
 Run it:
+
 ```bash
 cargo run
 ```
@@ -229,25 +225,19 @@ cargo test --features testutils benchmark -- --nocapture
 
 ## Why Pure Rust?
 
-The `falcon` crate in this repo provides C FFI bindings to the reference implementation, which works great for native and browser WASM. However, Soroban's WASM environment is more restrictive:
+The `falcon` crate in this repo provides C FFI bindings to the reference implementation, which works fine for native and browser WASM. But Soroban's WASM environment is more restrictive:
 
 - No `getrandom` or entropy sources
 - No global memory allocator (`alloc` crate unavailable)
 - No libc or WASI
 - Pure `#![no_std]` with only stack allocation
 
-This verifier is a from-scratch pure-Rust implementation that works within these constraints.
+This verifier is pure Rust, written from scratch to work within these constraints.
 
 ## Security
 
 **This code has not been audited.** Use at your own risk in production environments.
 
-- This implementation has been cross-verified against the C reference implementation
-- All 100 NIST Known Answer Test (KAT) vectors pass verification
-- All test vectors from the `falcon` crate pass verification
-- The L2 norm bound check prevents signature forgery
-
-**Note:** Only verification is implemented. Key generation and signing require the full `falcon` crate (off-chain).
 
 ## License
 

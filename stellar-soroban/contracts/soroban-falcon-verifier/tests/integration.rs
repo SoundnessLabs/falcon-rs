@@ -1,12 +1,9 @@
-//! Integration tests with real Falcon signatures.
-//!
-//! These tests generate signatures using the falcon crate (C FFI)
-//! and verify them using our pure-Rust verifier.
+//! Integration tests with signature verification.
 
 #![cfg(feature = "testutils")]
 
-use soroban_sdk::{Bytes, Env};
 use soroban_falcon_verifier::{FalconVerifierContract, FalconVerifierContractClient};
+use soroban_sdk::{Bytes, Env};
 
 // Test vector generated using the falcon crate with generate_vectors binary
 // Seed: 2a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c73

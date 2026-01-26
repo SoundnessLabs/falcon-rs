@@ -33,7 +33,7 @@ echo ""
 
 RESULT=$(stellar contract invoke \
     --id $CONTRACT_ID \
-    --source alice \
+    --source demo \
     --network testnet \
     -- \
     verify \
@@ -61,7 +61,7 @@ WRONG_MESSAGE="57726f6e67206d657373616765"
 
 RESULT=$(stellar contract invoke \
     --id $CONTRACT_ID \
-    --source alice \
+    --source demo \
     --network testnet \
     -- \
     verify \

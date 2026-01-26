@@ -140,7 +140,7 @@ fn test_kat_vectors() {
         let msg = vector.message();
         let sig = vector.extract_falcon_signature();
 
-        // Verify
+
         let result = FalconVerifier::verify_512(&pk, &msg, &sig);
 
         if result {
