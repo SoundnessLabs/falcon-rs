@@ -3,7 +3,7 @@ name = "soroban-falcon-smart-account"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Falcon-512 signature verifier for OpenZeppelin Soroban Smart Accounts"
+description = "Falcon-512 post-quantum smart account for Soroban with embedded signature verification"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -13,10 +13,10 @@ testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = "23.4.0"
+sha3 = { version = "0.10.8", default-features = false }
 
 [dev-dependencies]
 soroban-sdk = { version = "23.4.0", features = ["testutils"] }
-soroban-falcon-verifier = { path = "../soroban-falcon-verifier", features = ["testutils"] }
 hex = "0.4"
 
 [profile.release]

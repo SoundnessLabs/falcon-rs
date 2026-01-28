@@ -1,37 +1,30 @@
-# Falcon-512 Smart Account Verifier for Soroban
+# Falcon-512 Smart Account for Soroban
 
-A signature verifier contract compatible with [OpenZeppelin's Soroban Smart Accounts](https://github.com/OpenZeppelin/stellar-contracts/tree/main/packages/accounts). Lets you use **Falcon-512 post-quantum signatures** with Stellar account abstraction.
-
-## Deployed Contracts (Testnet)
-
-| Contract | Address |
-|----------|---------|
-| **Falcon-512 Verifier** | `CBUSI6FKYYA2OUXR5Z4APPHARJ3NOS3YPUDJU2YZC2YXH46BQZIIUPZR` |
-| **Falcon Smart Account** | `CCZYRK7TZK6POBS5NMUPYBC7HA6EI4WJLWXNZCRF656L3HFF3BX43QBG` |
-
-## Live Demo
-
-A live demo is available at: [stellar-pq.soundness.xyz](https://stellar-pq.soundness.xyz/)
+A post-quantum secure smart account implementing Soroban's `CustomAccountInterface` with **embedded Falcon-512 signature verification**. This contract enables quantum-resistant transaction authentication on Stellar.
 
 ## Contract Interface
+
+### Constructor
+
+The contract is initialized at deployment with a Falcon-512 public key:
+
+```rust
+__constructor(falcon_pubkey: Bytes)  // 897-byte Falcon-512 public key
+```
 
 ### Functions
 
 | Function | Description |
 |----------|-------------|
-| `initialize(falcon_verifier: Address)` | Initialize with Falcon verifier contract address (call once) |
-| `verify(payload, key_data, sig_data) -> bool` | Verify a Falcon-512 signature |
-| `get_falcon_verifier() -> Address` | Get the configured Falcon verifier address |
-| `validate_inputs(payload, key_data, sig_data) -> bool` | Pre-flight input validation |
-| `get_expected_sizes() -> (u32, u32, u32, u32, u32)` | Get expected input sizes |
+| `get_pubkey() -> Bytes` | Get the stored Falcon-512 public key |
+| `__check_auth(...)` | Verify transaction authorization (called by Soroban runtime) |
 
 ### Input Sizes
 
 | Parameter | Size | Description |
 |-----------|------|-------------|
-| `payload` | Any (typically 32 bytes) | Message/hash being verified |
-| `key_data` | 897 bytes | Falcon-512 public key |
-| `sig_data` | 42-700 bytes | Falcon signature (666 bytes padded) |
+| `falcon_pubkey` | 897 bytes | Falcon-512 public key |
+| `signature` | 42-700 bytes | Falcon signature (typically ~666 bytes) |
 
 ## Usage
 
@@ -42,38 +35,16 @@ A live demo is available at: [stellar-pq.soundness.xyz](https://stellar-pq.sound
 cd soroban-falcon-smart-account
 stellar contract build
 
-# Deploy
+# Deploy with constructor argument
 stellar contract deploy \
   --wasm target/wasm32v1-none/release/soroban_falcon_smart_account.wasm \
   --source <YOUR_KEY> \
-  --network testnet
-
-# Initialize with a Falcon verifier contract address
-stellar contract invoke \
-  --id <YOUR_CONTRACT_ID> \
-  --source <YOUR_KEY> \
   --network testnet \
   -- \
-  initialize \
-  --falcon_verifier <FALCON_VERIFIER_CONTRACT_ADDRESS>
+  --falcon_pubkey <897_BYTE_HEX_PUBKEY>
 ```
 
-### Use with Smart Accounts
-
-When creating an OpenZeppelin Smart Account, configure an external signer using this verifier:
-
-```rust
-use soroban_sdk::{Address, Bytes};
-
-// Create an external signer with Falcon
-let falcon_sa_verifier = Address::from_string(&"CBUSI6FKYYA2OUXR5Z4APPHARJ3NOS3YPUDJU2YZC2YXH46BQZIIUPZR");
-let falcon_pubkey: Bytes = /* 897-byte Falcon-512 public key */;
-
-// Add to Smart Account context rule
-Signer::External(falcon_sa_verifier, falcon_pubkey)
-```
-
-### Example of On-chain Verification with Rust SDK
+### Example: On-chain Verification with Rust SDK
 
 ```rust
 // 1. Build transfer transaction
@@ -98,7 +69,7 @@ let preimage = HashIdPreimageSorobanAuthorization {
 let payload_hash: [u8; 32] = sha256(preimage.to_xdr());
 
 // 4. Sign with Falcon-512
-let falcon_signature = keypair.sign(payload_hash); 
+let falcon_signature = keypair.sign(payload_hash);
 
 // 5. Build signed auth entry
 let signed_auth = SorobanAuthorizationEntry {
@@ -111,7 +82,7 @@ let signed_auth = SorobanAuthorizationEntry {
     root_invocation: invocation,
 };
 
-// 6. re-simulate with signed auth
+// 6. Re-simulate with signed auth
 let tx_with_auth = build_tx_with_auth(signed_auth);
 let sim2 = simulate_transaction(tx_with_auth);
 
@@ -127,13 +98,16 @@ let signed_envelope = fee_payer.sign(final_tx);
 submit(signed_envelope);
 ```
 
+## Live Demo
+
+A live demo is available at: [stellar-pq.soundness.xyz](https://stellar-pq.soundness.xyz/)
+
 ## Related
 
-- [Falcon-512 Verifier](../soroban-falcon-verifier) - Core verification logic
-- [OpenZeppelin Smart Accounts](https://github.com/OpenZeppelin/stellar-contracts/tree/main/packages/accounts) - Account abstraction framework
+- [Falcon-512 Verifier](../soroban-falcon-verifier) - Standalone verifier contract (reference implementation)
 - [Falcon NIST Submission](https://falcon-sign.info/) - Falcon algorithm specification
 - [Soroban Custom Accounts](https://developers.stellar.org/docs/build/guides/conventions/custom-account) - Stellar documentation
-- [Complex Account Example](https://github.com/stellar/soroban-examples/blob/main/account/src/lib.rs) - Reference implementation
+- [NIST PQC](https://csrc.nist.gov/projects/post-quantum-cryptography) - Post-quantum cryptography standards
 
 ## License
 

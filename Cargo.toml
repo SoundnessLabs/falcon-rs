@@ -2,8 +2,8 @@
 members = [
     "falcon-sys",
     "falcon",
-    "stellar-soroban/contracts/soroban-falcon-verifier",
-    "stellar-soroban/contracts/soroban-falcon-smart-account",
+    "stellar-pq/contracts/soroban-falcon-verifier",
+    "stellar-pq/contracts/soroban-falcon-smart-account",
 ]
 resolver = "2"
 
